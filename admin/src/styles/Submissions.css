@@ -1,0 +1,88 @@
+.submissions-container {
+  max-width: 1400px;
+}
+
+.submissions-container h2 {
+  font-size: 28px;
+  color: #1f2937;
+  margin-bottom: 25px;
+}
+
+.submissions-table {
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  overflow-x: auto;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.submissions-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.submissions-table thead {
+  background-color: #f3f4f6;
+  position: sticky;
+  top: 0;
+}
+
+.submissions-table th {
+  padding: 15px;
+  text-align: left;
+  font-weight: 700;
+  color: #1f2937;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.submissions-table td {
+  padding: 15px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #374151;
+}
+
+.submissions-table tbody tr:hover {
+  background-color: #f9fafb;
+}
+
+.btn-view,
+.btn-delete {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 12px;
+  margin-right: 4px;
+}
+
+.btn-view {
+  background-color: #dbeafe;
+  color: #0369a1;
+}
+
+.btn-view:hover {
+  background-color: #bfdbfe;
+}
+
+.btn-delete {
+  background-color: #fee2e2;
+  color: #dc2626;
+}
+
+.btn-delete:hover {
+  background-color: #fecaca;
+}
+
+.empty-state {
+  text-align: center;
+  color: #9ca3af;
+  padding: 60px 20px !important;
+}
+
+.empty-state p {
+  margin: 0;
+  line-height: 1.5;
+}
