@@ -21,6 +21,25 @@ const PARTNER_SOURCES = {
 };
 
 /**
+ * Safely parse and validate a date string
+ * Returns a valid Date object or null if invalid
+ */
+function validateAndParseDate(dateValue) {
+  if (!dateValue) return null;
+  
+  try {
+    const parsed = new Date(dateValue);
+    // Check if the date is valid
+    if (isNaN(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
  * Transform Amber Student API response to our accommodation format
  */
 function transformAmberListing(amberItem) {
@@ -409,7 +428,7 @@ async function syncAccommodationData() {
         universityNearby: listing.universityName,
         pricePerWeek: listing.budget,
         amenities: listing.services || [],
-        moveIn: listing.moveInDate ? new Date(listing.moveInDate) : undefined,
+        moveInDate: validateAndParseDate(listing.moveInDate),
       };
 
       const result = await Accommodation.findOneAndUpdate(

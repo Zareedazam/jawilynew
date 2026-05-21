@@ -536,7 +536,7 @@ function AccommodationPageInner() {
                   </div>
                   <div className="rounded-xl bg-slate-50 p-3">
                     <div className="text-xs text-slate-500">Move-in</div>
-                    <div className="mt-1 font-medium">{p.moveInDate ? new Date(p.moveInDate).toISOString().slice(0, 10) : "—"}</div>
+                    <div className="mt-1 font-medium">{p.moveInDate ? (() => { try { const d = new Date(p.moveInDate); return isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 10); } catch { return '—'; } })() : "—"}</div>
                   </div>
                 </div>
 
