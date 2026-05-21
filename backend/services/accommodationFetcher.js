@@ -9,6 +9,7 @@
  */
 
 const Accommodation = require("../models/Accommodation");
+const axios = require("axios");
 
 // Simulated partner data sources - realistic UK student accommodation listings
 // In production, these would be replaced with real API calls to partners like
@@ -20,11 +21,137 @@ const PARTNER_SOURCES = {
 };
 
 /**
+ * Transform Amber Student API response to our accommodation format
+ */
+function transformAmberListing(amberItem) {
+  const pricing = amberItem.pricing || {};
+  const meta = amberItem.meta || {};
+  const location = amberItem.location || {};
+  const images = Array.isArray(amberItem.images) ? amberItem.images : [];
+  const features = Array.isArray(amberItem.features) ? amberItem.features : [];
+  
+  // Extract services from features
+  const services = [];
+  features.forEach(feature => {
+    if (feature.name && feature.values) {
+      feature.values.forEach(val => {
+        if (val.name) services.push(val.name);
+      });
+    }
+  });
+  
+  // Determine room type from meta types
+  let roomType = "Private";
+  if (meta.types && Array.isArray(meta.types)) {
+    if (meta.types.includes("studio")) roomType = "Studio";
+    else if (meta.types.includes("shared_room")) roomType = "Shared";
+    else if (meta.types.includes("entire_place")) roomType = "Private";
+  }
+  
+  // Get coordinates for distance calculation (placeholder - actual distance would need geolocation)
+  const coordinates = amberItem.location_coordinates || location.location_coordinates;
+  
+  return {
+    hostelName: amberItem.name || "Unnamed Property",
+    universityName: "University", // Amber API doesn't explicitly provide university
+    city: location.locality?.long_name || location.locality?.short_name || "London",
+    roomType,
+    distanceKm: 1.5, // Placeholder - would need geolocation service
+    budget: pricing.min_price || pricing.price || 0,
+    rating: 4.0, // Could calculate from meta.facts
+    status: "Verified",
+    services: services.slice(0, 6), // Limit to 6 services
+    description: amberItem.description?.[0]?.value?.replace(/<[^>]*>/g, '') || amberItem.meta?.meta_description || "Modern student accommodation",
+    contact: "hello@amberstudent.com",
+    nearBy: location.district?.long_name || location.locality?.long_name || "London",
+    moveInDate: meta.min_available_from || new Date().toISOString().split('T')[0],
+    source: PARTNER_SOURCES.source3,
+    amberId: amberItem.id,
+    amberName: amberItem.name,
+    amberPricing: pricing,
+    amberMeta: meta,
+    images: images.map(img => img.path || img.base_path).filter(Boolean),
+    location: location,
+  };
+}
+
+/**
+ * Fetch listings from Amber Student API
+ */
+async function fetchFromAmberAPI(page = 1) {
+  try {
+    const apiUrl = process.env.AMBER_API_URL;
+    const limit = parseInt(process.env.AMBER_API_LIMIT || "50");
+    
+    if (!apiUrl) {
+      console.warn("[Amber API] URL not configured in AMBER_API_URL");
+      return [];
+    }
+    
+    const url = `${apiUrl}?page=${page}&limit=${limit}`;
+    console.log(`[Amber API] Fetching from: ${url}`);
+    
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Jawily-Edu/1.0'
+      }
+    });
+    
+    if (response.data && response.data.data && Array.isArray(response.data.data.result)) {
+      const listings = response.data.data.result.map(item => transformAmberListing(item));
+      
+      // If there are child listings (variants), include them too
+      const withChildren = [];
+      for (const listing of listings) {
+        withChildren.push(listing);
+        
+        // Add children as separate listings with inherited data
+        if (Array.isArray(listing.amberMeta?.children) && listing.amberMeta.children.length > 0) {
+          listing.amberMeta.children.forEach(child => {
+            if (child.name && child.pricing) {
+              withChildren.push({
+                ...listing,
+                hostelName: child.name,
+                budget: child.pricing.min_price || child.pricing.price || listing.budget,
+                amberId: child.id,
+                amberName: child.name,
+                amberPricing: child.pricing,
+              });
+            }
+          });
+        }
+      }
+      
+      console.log(`[Amber API] Fetched ${listings.length} listings (${withChildren.length} with children)`);
+      return withChildren;
+    }
+    
+    return [];
+  } catch (error) {
+    console.error("[Amber API] Fetch error:", error.message);
+    return [];
+  }
+}
+
+/**
  * Fetch accommodation listings from external partner sources.
  * This function aggregates data from multiple accommodation providers.
  */
 async function fetchExternalAccommodation() {
   const listings = [];
+
+  // --- Source 3: Amber Student (Live API) ---
+  try {
+    console.log("[Accommodation] Fetching from Amber Student API...");
+    const amberListings = await fetchFromAmberAPI(1);
+    if (amberListings.length > 0) {
+      listings.push(...amberListings);
+      console.log(`[Accommodation] Added ${amberListings.length} listings from Amber API`);
+    }
+  } catch (err) {
+    console.error("[Accommodation] Error fetching from Amber API:", err.message);
+  }
 
   // --- Source 1: Unite Students (UK's largest student accommodation provider) ---
   const uniteListings = [
@@ -361,6 +488,7 @@ function getLastSyncTime() {
 
 module.exports = {
   fetchExternalAccommodation,
+  fetchFromAmberAPI,
   syncAccommodationData,
   startAutoSync,
   getLastSyncTime,

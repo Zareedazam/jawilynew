@@ -226,4 +226,133 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+// Get live Amber Student API listings
+router.get("/amber/live", async (req, res) => {
+  try {
+    const { page = 1 } = req.query;
+    const axios = require("axios");
+    
+    const apiUrl = process.env.AMBER_API_URL;
+    if (!apiUrl) {
+      return res.status(400).json({ 
+        message: "Amber API not configured",
+        error: "AMBER_API_URL not set in environment"
+      });
+    }
+    
+    const limit = parseInt(process.env.AMBER_API_LIMIT || "50");
+    const url = `${apiUrl}?page=${page}&limit=${limit}`;
+    
+    console.log(`[Accommodation Routes] Fetching Amber API: ${url}`);
+    
+    const response = await axios.get(url, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'Jawily-Edu/1.0' }
+    });
+    
+    if (response.data && response.data.data) {
+      const result = response.data.data.result || [];
+      const meta = response.data.data.meta || {};
+      
+      return res.status(200).json({
+        message: "success",
+        data: {
+          meta,
+          listings: result,
+          total: result.length,
+          page: meta.current_page || 1,
+          totalPages: meta.pages ? meta.pages.length : 1
+        }
+      });
+    }
+    
+    res.status(200).json({ message: "success", data: { listings: [], meta: {} } });
+  } catch (error) {
+    console.error("[Amber API Error]", error.message);
+    res.status(500).json({ 
+      message: "Failed to fetch from Amber API", 
+      error: error.message 
+    });
+  }
+});
+
+// Sync Amber Student API data to MongoDB
+router.post("/amber/sync", async (req, res) => {
+  try {
+    const { page = 1 } = req.body;
+    const { fetchFromAmberAPI } = require("../services/accommodationFetcher");
+    
+    console.log("[Accommodation Routes] Syncing Amber data to MongoDB...");
+    
+    const listings = await fetchFromAmberAPI(page);
+    let created = 0;
+    let updated = 0;
+    let errors = 0;
+    
+    for (const listing of listings) {
+      try {
+        const filter = {
+          hostelName: listing.hostelName,
+          city: listing.city,
+        };
+        
+        const update = {
+          hostelName: listing.hostelName,
+          universityName: listing.universityName,
+          city: listing.city,
+          roomType: listing.roomType,
+          distanceKm: listing.distanceKm,
+          budget: listing.budget,
+          rating: listing.rating,
+          status: listing.status,
+          services: listing.services,
+          description: listing.description,
+          contact: listing.contact,
+          nearBy: listing.nearBy,
+          moveInDate: listing.moveInDate ? new Date(listing.moveInDate) : undefined,
+          // Store Amber-specific data
+          amberId: listing.amberId,
+          amberName: listing.amberName,
+          amberPricing: listing.amberPricing,
+          amberMeta: listing.amberMeta,
+          amberImages: listing.images,
+          source: listing.source,
+        };
+        
+        const result = await Accommodation.findOneAndUpdate(
+          filter,
+          { $set: update },
+          { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        
+        if (result.isNew) {
+          created++;
+        } else {
+          updated++;
+        }
+      } catch (err) {
+        errors++;
+        console.error(`[Amber Sync] Error syncing "${listing.hostelName}":`, err.message);
+      }
+    }
+    
+    res.status(200).json({
+      message: "Amber accommodation data synced successfully",
+      stats: {
+        total: listings.length,
+        created,
+        updated,
+        errors,
+        syncedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error("[Amber Sync Error]", error.message);
+    res.status(500).json({ 
+      message: "Failed to sync Amber data", 
+      error: error.message 
+    });
+  }
+});
+
 module.exports = router;

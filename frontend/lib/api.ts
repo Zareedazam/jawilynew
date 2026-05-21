@@ -10,6 +10,8 @@ export const API_ENDPOINTS = {
   COURSES: `${API_URL}/api/courses`,
   UNIVERSITIES: `${API_URL}/api/universities`,
   ACCOMMODATION: `${API_URL}/api/accommodation`,
+  ACCOMMODATION_AMBER_LIVE: `${API_URL}/api/accommodation/amber/live`,
+  ACCOMMODATION_AMBER_SYNC: `${API_URL}/api/accommodation/amber/sync`,
   EDUCATION_LOANS: `${API_URL}/api/education-loans`,
   SERVICES: `${API_URL}/api/services`,
   NEWS: `${API_URL}/api/news`,

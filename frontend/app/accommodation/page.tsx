@@ -54,6 +54,89 @@ function slugify(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
+function normalizeProperty(p: any): Property {
+  const hostelName = p?.hostelName || p?.name || "";
+  const universityName = p?.universityName || p?.universityNearby || "";
+  const moveInDate = p?.moveInDate || p?.moveIn || undefined;
+  const budgetValue = typeof p?.budget !== "undefined" ? p.budget : p?.pricePerWeek;
+  const services = Array.isArray(p?.services) ? p.services : (Array.isArray(p?.amenities) ? p.amenities : undefined);
+  const distanceKmValue = typeof p?.distanceKm !== "undefined" ? Number(p.distanceKm) : undefined;
+  const distanceRangeValue = p?.distanceRange || (typeof distanceKmValue === "number" ? distanceLabel(distanceKmValue) : undefined);
+  const statusValue = normalizeStatus(p?.status);
+
+  return {
+    _id: p?._id || `local-${p?.hostelName}`,
+    hostelName,
+    universityName,
+    city: p?.city || "",
+    roomType: p?.roomType || "Private",
+    budget: typeof budgetValue !== "undefined" ? Number(budgetValue) : 0,
+    distanceKm: distanceKmValue,
+    distanceRange: distanceRangeValue,
+    moveInDate,
+    nearBy: p?.nearBy,
+    rating: typeof p?.rating !== "undefined" ? Number(p.rating) : undefined,
+    status: statusValue || "Verified",
+    services,
+    description: p?.description,
+    contact: p?.contact,
+  };
+}
+
+function transformAmberToProperty(item: any): Property | null {
+  try {
+    const pricing = item.pricing || {};
+    const meta = item.meta || {};
+    const location = item.location || {};
+    const features = Array.isArray(item.features) ? item.features : [];
+    
+    // Extract services from features
+    const services: string[] = [];
+    features.forEach((feature: any) => {
+      if (feature.name && feature.values) {
+        feature.values.forEach((val: any) => {
+          if (val.name) services.push(val.name);
+        });
+      }
+    });
+    
+    // Determine room type
+    let roomType: RoomType = "Private";
+    if (meta.types && Array.isArray(meta.types)) {
+      if (meta.types.includes("studio")) roomType = "Studio";
+      else if (meta.types.includes("private_room")) roomType = "Private";
+      else if (meta.types.some((t: string) => t.includes("shared"))) roomType = "Shared";
+    }
+    
+    const price = pricing.min_price || pricing.min_available_price || pricing.price || 0;
+    const city = location.locality?.long_name || location.locality?.short_name || "London";
+    const moveInDate = meta.min_available_from || new Date().toISOString().split('T')[0];
+    
+    return {
+      _id: `amber-${item.id}`,
+      hostelName: item.name || "Unnamed Property",
+      universityName: "University", // Amber doesn't provide university
+      city,
+      roomType,
+      budget: Number(price),
+      distanceKm: 1.5, // Placeholder
+      distanceRange: "0-2 km",
+      moveInDate,
+      nearBy: location.district?.long_name || city,
+      rating: meta.ranking ? Number(meta.ranking) / 25 : 4.0, // Scale ranking to 0-5
+      status: "Verified",
+      services: services.slice(0, 6),
+      description: item.description?.length > 0 
+        ? (item.description[0]?.value || "").replace(/<[^>]*>/g, '')
+        : meta.meta_description || "Modern student accommodation",
+      contact: "hello@amberstudent.com",
+    };
+  } catch (err) {
+    console.error("Error transforming Amber property:", err);
+    return null;
+  }
+}
+
 export default function AccommodationPage() {
   return (
     <Suspense fallback={null}>
@@ -120,40 +203,48 @@ function AccommodationPageInner() {
       try {
         setLoading(true);
         setError(null);
-        const response = await fetch(API_ENDPOINTS.ACCOMMODATION);
-        if (!response.ok) throw new Error("Failed to fetch accommodation");
-        const data = await response.json();
-        const list = Array.isArray(data) ? data : [];
-        const normalized: Property[] = list.map((p: any) => {
-          const hostelName = p?.hostelName || p?.name || "";
-          const universityName = p?.universityName || p?.universityNearby || "";
-          const moveInDate = p?.moveInDate || p?.moveIn || undefined;
-          const budgetValue = typeof p?.budget !== "undefined" ? p.budget : p?.pricePerWeek;
-          const services = Array.isArray(p?.services) ? p.services : (Array.isArray(p?.amenities) ? p.amenities : undefined);
-          const distanceKmValue = typeof p?.distanceKm !== "undefined" ? Number(p.distanceKm) : undefined;
-          const distanceRangeValue = p?.distanceRange || (typeof distanceKmValue === "number" ? distanceLabel(distanceKmValue) : undefined);
-          const statusValue = normalizeStatus(p?.status);
-
-          return {
-            _id: p?._id,
-            hostelName,
-            universityName,
-            city: p?.city || "",
-            roomType: p?.roomType,
-            budget: typeof budgetValue !== "undefined" ? Number(budgetValue) : 0,
-            distanceKm: distanceKmValue,
-            distanceRange: distanceRangeValue,
-            moveInDate,
-            nearBy: p?.nearBy,
-            rating: typeof p?.rating !== "undefined" ? Number(p.rating) : undefined,
-            status: statusValue,
-            services,
-            description: p?.description,
-            contact: p?.contact,
-          } as Property;
-        });
-
-        setProperties(normalized);
+        
+        // Fetch from local backend
+        let dbListings: Property[] = [];
+        try {
+          const response = await fetch(API_ENDPOINTS.ACCOMMODATION);
+          if (response.ok) {
+            const data = await response.json();
+            const list = Array.isArray(data) ? data : [];
+            dbListings = list.map((p: any) => normalizeProperty(p)) as Property[];
+          }
+        } catch (err) {
+          console.warn("Error fetching from local DB:", err);
+        }
+        
+        // Fetch from Amber Student API (live)
+        let amberListings: Property[] = [];
+        try {
+          const response = await fetch(`${API_ENDPOINTS.ACCOMMODATION_AMBER_LIVE}?page=1`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data.data && Array.isArray(data.data.listings)) {
+              amberListings = data.data.listings
+                .map((item: any) => transformAmberToProperty(item))
+                .filter(Boolean) as Property[];
+            }
+          }
+        } catch (err) {
+          console.warn("Error fetching from Amber API:", err);
+        }
+        
+        // Combine and deduplicate listings
+        const combined = [...amberListings, ...dbListings];
+        const uniqueListings = Array.from(
+          new Map(
+            combined.map(p => [
+              `${p.hostelName}-${p.city}`.toLowerCase(),
+              p
+            ])
+          ).values()
+        );
+        
+        setProperties(uniqueListings);
       } catch (err) {
         setError(err instanceof Error ? err.message : "An error occurred");
         console.error("Error fetching accommodation:", err);
