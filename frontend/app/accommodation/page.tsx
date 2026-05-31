@@ -158,6 +158,8 @@ function AccommodationPageInner() {
   const [moveIn, setMoveIn] = useState<string>("");
   const [facilityQuery, setFacilityQuery] = useState<string>("Any");
   const [budget, setBudget] = useState<number>(Number.MAX_SAFE_INTEGER);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 9; // 3x3 grid
 
   useEffect(() => {
     if (didInitFromUrl.current) return;
@@ -177,6 +179,11 @@ function AccommodationPageInner() {
 
     didInitFromUrl.current = true;
   }, [searchParams]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, roomType, distance, moveIn, facilityQuery, budget]);
 
   const budgetOptions = useMemo(() => {
     const set = new Set<number>();
@@ -260,7 +267,7 @@ function AccommodationPageInner() {
     const q = query.trim().toLowerCase();
     const fq = facilityQuery.trim().toLowerCase();
 
-    return properties.filter((p) => {
+    const filtered = properties.filter((p) => {
       const matchesQuery =
         !q ||
         p.city.toLowerCase().includes(q) ||
@@ -302,7 +309,17 @@ function AccommodationPageInner() {
       if (rb !== ra) return rb - ra;
       return a.budget - b.budget;
     });
-  }, [query, roomType, distance, moveIn, facilityQuery, budget, properties]);
+
+    // Paginate results
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return {
+      all: filtered,
+      paginated: filtered.slice(startIndex, endIndex),
+      totalPages: Math.ceil(filtered.length / itemsPerPage),
+      totalResults: filtered.length,
+    };
+  }, [query, roomType, distance, moveIn, facilityQuery, budget, properties, currentPage, itemsPerPage]);
 
   return (
     <>
@@ -485,18 +502,18 @@ function AccommodationPageInner() {
           <div>
             <h2 className="text-xl font-semibold">Available stays</h2>
             <p className="text-sm text-slate-600">
-              Showing {results.length} result{results.length === 1 ? "" : "s"}{" "}
+              Showing {results.paginated.length} of {results.totalResults} result{results.totalResults === 1 ? "" : "s"}{" "}
               (sorted by verified, rating, then price)
             </p>
           </div>
 
           <div className="text-sm text-slate-600">
-            Tip: search “city” or “university”
+            Tip: search "city" or "university"
           </div>
         </div>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          {results.map((p) => (
+          {results.paginated.map((p) => (
               <article
                 key={p._id}
                 className="rounded-2xl border p-5 shadow-sm transition hover:shadow-md"
@@ -579,11 +596,54 @@ function AccommodationPageInner() {
           ))}
         </div>
 
-        {results.length === 0 && (
+        {results.totalResults === 0 && (
           <div className="mt-8 rounded-2xl border bg-slate-50 p-6">
             <div className="text-sm font-medium">No matches found</div>
             <div className="mt-1 text-sm text-slate-600">
               Try changing hostel/city/university, increasing budget, or removing filters.
+            </div>
+          </div>
+        )}
+
+        {/* PAGINATION CONTROLS */}
+        {results.totalResults > 0 && (
+          <div className="mt-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="text-sm text-slate-600">
+              Page {currentPage} of {results.totalPages}
+            </div>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                ← Previous
+              </button>
+              
+              <div className="flex gap-2">
+                {Array.from({ length: results.totalPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      currentPage === page
+                        ? "bg-slate-900 text-white"
+                        : "border hover:bg-slate-50"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(results.totalPages, prev + 1))}
+                disabled={currentPage === results.totalPages}
+                className="rounded-xl border px-4 py-2 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50"
+              >
+                Next →
+              </button>
             </div>
           </div>
         )}
